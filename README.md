@@ -86,13 +86,43 @@ Interrupting with Ctrl+C stops the local command but may not cancel a request al
   `invalid_output` runs, not discarded.
 * Retries: transient failures (HTTP 5xx, 408, 429, network errors) retry up to `--max-retries`
   (default 3) with backoff; other errors fail immediately. Every failed attempt is recorded.
-* Limitations: PDFs over 15 MB are rejected (inline only; the Files API is not implemented).
-  Gemini's page-count/size limits have not been checked against Google's documentation, so
-  confirm them for other documents. For this subset, the paper reports that Gemini 3 Flash and Pro
+* Limitations: PDFs over 15 MiB are rejected (inline only; the Files API is not implemented).
+  For this subset, the paper reports that Gemini 3 Flash and Pro
   ingested all ten PDFs (up to 218 pages) while Claude's 100-page limit rejected them. The API
   usage follows the google-genai SDK README and source.
 * Reference answers never enter requests: `extract.py` has no reference parameter and imports no
   dataset/scoring code (enforced by `tests/test_reference_isolation.py`).
+
+### Document size and practical limits
+
+The baseline sends the entire PDF in one request. The ten prepared agreements are 97-218 pages and
+approximately 1-2 MB each. As one measurement, a 97-page Adobe agreement run with
+`gemini-3.8-flash` reported 50,533 input tokens (about 521 per page). Applying that rate to the
+218-page agreement gives a rough estimate of 114,000 input tokens. This is an extrapolation from
+one document, not a measured token count or a reliable conversion for arbitrary PDFs; layout,
+content, model, and request configuration can affect usage. The run record's `token_usage` reports
+actual usage when supplied by the API, including input, output, and thinking tokens.
+
+Several different limits and failure modes matter:
+
+* **Local file-size limit:** this project rejects PDF files over 15 MiB (15,728,640 bytes) before
+  sending them. This is a byte limit, not a page or token limit; the Files API is not implemented.
+* **Model and API limits:** Google's documentation lists an input limit of 1,048,576 tokens for
+  [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash) and up to
+  1,000 PDF pages per request in its
+  [document-processing guidance](https://ai.google.dev/gemini-api/docs/document-processing).
+  The combined input must also fit the model's context window. Limits can change or differ for
+  other models; check the current documentation.
+* **Estimates are not limits:** at the Adobe run's rate, 1,000 pages would be roughly 521,000
+  input tokens, while the input-token limit alone would correspond to roughly 2,000 pages.
+  The latter is only arithmetic, not a supported PDF size: the documented page limit, this
+  project's byte cap, or actual token usage could be reached first.
+* **Practical reliability:** longer documents can increase latency, cost, timeout risk, and the
+  difficulty of finding or correctly interpreting scattered terms, even when they fit all limits.
+  Several hundred pages is a reasonable point to test carefully, not a measured failure threshold.
+  Compare whole-document extraction against section selection or other approaches on representative
+  documents. Schema-valid output does not establish factual accuracy; evaluate extracted values
+  against reference answers or review them.
 
 ### Saved runs
 
