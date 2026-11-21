@@ -28,4 +28,4 @@ and at <https://github.com/ContextualAI/extract-bench/blob/ca817638852a23bb17ca9
 The dataset README only says "See the repository LICENSE for terms." The paper (Appendix A) says
 the credit agreements are public-domain exhibits from SEC EDGAR filings and that the dataset and
 framework are released under the MIT license. That is the authors' statement; it has not been
-independently verified here. Check before redistributing the downloaded data.
+independently verified. Check before redistributing the downloaded data.

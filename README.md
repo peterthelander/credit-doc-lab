@@ -5,24 +5,26 @@ credit agreements. **Milestone 1** is a plain Gemini baseline (PDF + JSON schema
 reproducible, offline-capable evaluation. A document-navigation agent comes later. This is a
 prototype, not evidence of production reliability.
 
-## Dataset: what was verified
+## Dataset
 
-Inspected [ContextualAI/extract-bench](https://github.com/ContextualAI/extract-bench) at commit
-`ca81763…` (cloned and read locally):
+The data comes from the credit-agreement subset of
+[ContextualAI/extract-bench](https://github.com/ContextualAI/extract-bench), pinned to commit
+`ca81763…`:
 
 | Need | Finding |
 |---|---|
-| Source PDFs | Yes: 10 credit agreements in `dataset/finance/credit_agreement/pdf+gold/` (~1–2 MB each; 97–218 pages, mean 137, 1,368 total, which I counted locally and which matches the paper). 4 more PDFs in `_extra/` have no reference answers and are skipped. |
+| Source PDFs | Yes: 10 credit agreements in `dataset/finance/credit_agreement/pdf+gold/` (~1–2 MB each; 97–218 pages, mean 137, 1,368 total). 4 more PDFs in `_extra/` have no reference answers and are skipped. |
 | Schema | Yes: `credit_agreement-schema.json` (JSON Schema + per-field `evaluation_config`; 13 scored fields). |
 | Reference answers | Yes: `*.gold.json`, described as human-validated. |
 | Scoring | Yes: `extract_bench` Python package. Deterministic metrics, plus LLM-judged `string_semantic` / `array_llm` (via LiteLLM; default judge `vertex_ai/gemini-2.5-flash`). |
-| License | Repo is MIT (© 2026 Contextual AI); the paper says dataset and framework are released under MIT. The paper also states the credit agreements are public-domain SEC EDGAR exhibits (an authors' claim I did not verify). The dataset README itself just says "See the repository LICENSE". See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). |
+| License | Repo is MIT (© 2026 Contextual AI); the paper says dataset and framework are released under MIT. The paper also states the credit agreements are public-domain SEC EDGAR exhibits (the authors' statement; not independently verified). The dataset README itself just says "See the repository LICENSE". See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). |
 
 The paper (Ferguson et al., arXiv:2602.12247) adds these details: the credit subset has 13 fields
-(269 gold values over 10 documents), annotated by a three-person team in about 2.9 hours total, with no inter-annotator agreement reported. Omission (gold has a
-value, prediction empty) is deliberately separated from hallucination (gold null, prediction has
-a value), which is how `missing` / `unexpected` are defined here. The paper does not mention the
-quirks I found in the data: a few gold values are the literal string `"NOT_FOUND"` (the official
+(269 gold values over 10 documents), annotated by a three-person team in about 2.9 hours total,
+with no inter-annotator agreement reported. Omission (gold has a value,
+prediction empty) is deliberately separated from hallucination (gold null, prediction has
+a value), which is how `missing` / `unexpected` are defined here. The paper does not mention these
+quirks in the data: a few gold values are the literal string `"NOT_FOUND"` (the official
 scorer treats it as ordinary text, and the schema never asks for it, so a model returning `null`
 is marked wrong on those fields), and long text fields (`borrowing_request`, `use_of_proceeds`)
 hold verbatim, often messy contract text.
@@ -103,9 +105,8 @@ prediction null/absent), **unexpected** (prediction has a value, gold is null/ab
 * `--scorer official`: wraps `extract_bench.ReportBuilder` (needs the `official` extra). It needs an
   LLM judge: default `gemini/gemini-2.5-flash` through LiteLLM using `GEMINI_API_KEY`
   (`--judge-model` to change). If any judge call fails the command errors instead of saving
-  deflated scores. Only that failure path was exercised here; no judge call succeeded (no API key),
-  so the adapter's conversion code and LiteLLM's use of `GEMINI_API_KEY` for `gemini/` models are
-  untested end to end.
+  deflated scores. The judge-backed path has not yet been run end to end with a live key, so the adapter's
+  conversion and LiteLLM's use of `GEMINI_API_KEY` for `gemini/` models are untested.
 
 ## Reference points from the paper (not comparable with our baseline scorer)
 
