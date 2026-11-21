@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import httpx
+import httpx2
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
@@ -46,10 +47,10 @@ def sdk_version() -> str:
 
 
 def make_client(timeout_seconds: float) -> genai.Client:
-    key = os.environ.get("GEMINI_API_KEY")
+    key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
     if not key:
         raise MissingApiKeyError(
-            "GEMINI_API_KEY is not set. Put it in .env (see .env.example) or export it."
+            "Set GOOGLE_API_KEY or GEMINI_API_KEY in the environment or .env (see .env.example)."
         )
     return genai.Client(
         api_key=key,
@@ -85,7 +86,7 @@ def is_retryable(exc: Exception) -> bool:
         return True
     if isinstance(exc, genai_errors.ClientError):
         return _status_code(exc) in (408, 429)
-    return isinstance(exc, (httpx.TransportError, TimeoutError, ConnectionError))
+    return isinstance(exc, (httpx.TransportError, httpx2.TransportError, TimeoutError, ConnectionError))
 
 
 def _call_with_retries(
@@ -93,9 +94,12 @@ def _call_with_retries(
     max_retries: int,
     sleep: Callable[[float], None],
     attempt_errors: list[AttemptError],
+    progress: Callable[[str], None] | None = None,
 ) -> Any:
     """Run `call`, retrying transient failures at most `max_retries` times."""
     for attempt in range(1, max_retries + 2):
+        if progress:
+            progress(f"Starting Gemini request (attempt {attempt}/{max_retries + 1}).")
         try:
             return call()
         except Exception as exc:  # noqa: BLE001 - recorded, then re-raised if final
@@ -110,8 +114,15 @@ def _call_with_retries(
                 )
             )
             if not retryable or attempt > max_retries:
+                if progress:
+                    progress(f"Request failed ({type(exc).__name__}); no more retries.")
                 raise
-            sleep(min(30.0, 2.0 ** attempt) + random.uniform(0, 1))
+            delay = min(30.0, 2.0 ** attempt) + random.uniform(0, 1)
+            if progress:
+                code = _status_code(exc)
+                status = f", HTTP {code}" if code is not None else ""
+                progress(f"Request failed ({type(exc).__name__}{status}); retrying in {delay:.1f}s.")
+            sleep(delay)
 
 
 def _now() -> str:
@@ -132,10 +143,13 @@ def extract_document(
     config: RunConfig | None = None,
     client: Any = None,
     sleep: Callable[[float], None] = time.sleep,
+    progress: Callable[[str], None] | None = None,
 ) -> RunRecord:
     """Extract from one PDF. API/validation failures are recorded, not raised."""
     config = config or RunConfig()
     pdf_path = Path(pdf_path)
+    if progress:
+        progress(f"Reading PDF {pdf_path}.")
     pdf_bytes = pdf_path.read_bytes()
     if len(pdf_bytes) > MAX_INLINE_PDF_BYTES:
         raise DocumentTooLargeError(
@@ -145,6 +159,8 @@ def extract_document(
     doc_id = doc_id or pdf_path.stem
     client = client or make_client(config.timeout_seconds)
 
+    if progress:
+        progress(f"Preparing {len(pdf_bytes)} bytes for model {model}; SDK timeout {config.timeout_seconds:g}s.")
     contents, gen_config = build_request(pdf_bytes, schema, config)
     started_at = _now()
     t0 = time.perf_counter()
@@ -159,6 +175,7 @@ def extract_document(
             config.max_retries,
             sleep,
             attempt_errors,
+            progress,
         )
     except Exception as exc:  # noqa: BLE001
         error = f"{type(exc).__name__}: {str(exc)[:1000]}"
@@ -167,6 +184,8 @@ def extract_document(
     text = raw = usage = finish_reason = parsed = validation = None
     status = "api_error"
     if response is not None:
+        if progress:
+            progress("Response received; parsing and validating output.")
         raw = response.model_dump(mode="json", exclude_none=True)
         usage = raw.get("usage_metadata") or None
         candidates = raw.get("candidates") or []

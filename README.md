@@ -38,12 +38,16 @@ commit and verifies each file's git blob SHA-1 against the tree listing. Data go
 ```bash
 python3 -m venv .venv && source .venv/bin/activate   # Python 3.11+
 pip install -e ".[dev]"                               # use ".[dev,official]" for the official scorer
-cp .env.example .env                                  # then put your key in GEMINI_API_KEY
+cp .env.example .env                                  # optional: add a key if not already in the environment
 ```
 
-`GEMINI_API_KEY` is read from the environment (or `.env`). It is needed only by `extract`/`batch`
-(and by the official scorer's judge). `--help`, tests, `prepare`, `split`, baseline `evaluate`, and
-`report` work without it.
+After pulling dependency updates, rerun `pip install -e ".[dev]"` in the activated environment.
+
+Extraction accepts `GOOGLE_API_KEY` or `GEMINI_API_KEY` from the environment or `.env`.
+If both are nonempty, `GOOGLE_API_KEY` takes precedence, including when one is in `.env`
+and the other is in the environment; setting only one is recommended. Empty values are ignored.
+The optional official scorer's judge has separate credential requirements (see Evaluation).
+`--help`, tests, `prepare`, `split`, baseline `evaluate`, and `report` work without an API key.
 
 ## Usage
 
