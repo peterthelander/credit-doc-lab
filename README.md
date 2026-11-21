@@ -67,6 +67,13 @@ Other inputs: `extract --pdf my.pdf --schema my-schema.json`; score a bare predi
 environment variable, else `gemini-3.8-flash` (the name used in the official google-genai README;
 not checked against the live model list, so pass `--model` explicitly).
 
+`extract` and `batch` print progress to stderr, including the model, request attempts, retries,
+validation and saving. While a document is being processed, an elapsed-time message appears every
+15 seconds. This is a local heartbeat, not confirmation of server-side progress. The SDK timeout
+setting defaults to 300 seconds; it is not necessarily a total wall-clock limit. Use `--timeout`
+and `--max-retries` to adjust the settings.
+Interrupting with Ctrl+C stops the local command but may not cancel a request already sent to Gemini.
+
 ### How extraction works
 
 * The PDF is sent inline as `application/pdf` bytes via the `google-genai` SDK
@@ -100,6 +107,8 @@ text and full response dump, parsed prediction, validation result, and errors. `
 Both scorers report per-field outcomes: **correct**, **incorrect**, **missing** (gold has a value,
 prediction null/absent), **unexpected** (prediction has a value, gold is null/absent), and
 **invalid** (wrong type, or no usable output, which scores every field 0).
+`evaluate` lists every field and its outcome; add `--details` to show the full reference and
+predicted values for each field. `report --details` instead summarizes non-correct fields.
 
 * `--scorer baseline` (default): offline, deterministic, **not the official scorer**. It follows
   each field's `evaluation_config` but approximates the LLM-judged metrics with string similarity

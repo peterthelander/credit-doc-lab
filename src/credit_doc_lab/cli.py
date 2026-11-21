@@ -3,12 +3,42 @@
 import argparse
 import json
 import sys
+import threading
+import textwrap
+import time
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 from dotenv import load_dotenv
 
 from . import config as cfg
 from .config import DataLayout
+
+PROGRESS_INTERVAL_SECONDS = 15.0
+
+
+def _progress(doc_id: str, message: str) -> None:
+    print(f"{doc_id}: {message}", file=sys.stderr, flush=True)
+
+
+@contextmanager
+def _show_elapsed(doc_id: str) -> Iterator[None]:
+    stop = threading.Event()
+    started = time.monotonic()
+
+    def report_elapsed() -> None:
+        while not stop.wait(PROGRESS_INTERVAL_SECONDS):
+            elapsed = time.monotonic() - started
+            _progress(doc_id, f"Still working ({elapsed:.0f}s elapsed); Gemini does not report server-side progress.")
+
+    thread = threading.Thread(target=report_elapsed, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join()
 
 
 def _layout(args) -> DataLayout:
@@ -41,11 +71,14 @@ def _extract_one(pdf: Path, schema: dict, schema_path: str, doc_id: str, args, c
     from .extract import extract_document
     from .runs import save_run
 
-    record = extract_document(
-        pdf, schema, schema_path=schema_path, model=args.model or cfg.default_model(),
-        doc_id=doc_id, config=_run_config(args), client=client,
-    )
-    run_dir = save_run(record, args.runs_dir)
+    with _show_elapsed(doc_id):
+        record = extract_document(
+            pdf, schema, schema_path=schema_path, model=args.model or cfg.default_model(),
+            doc_id=doc_id, config=_run_config(args), client=client,
+            progress=lambda message: _progress(doc_id, message),
+        )
+        _progress(doc_id, f"Saving run (status: {record.status}).")
+        run_dir = save_run(record, args.runs_dir)
     extra = f" ({record.error})" if record.error else ""
     print(f"{doc_id}: {record.status} in {record.elapsed_seconds}s -> {run_dir}{extra}")
     return 0 if record.status == "ok" else 1
@@ -88,6 +121,7 @@ def cmd_extract(args) -> int:
     else:
         layout = _layout(args)
         pdf, schema_path, doc_id = layout.pdf(args.doc), layout.schema, args.doc
+    _progress(doc_id, f"Loading schema {schema_path} and preparing Gemini client.")
     schema = load_schema(schema_path)
     client = make_client(args.timeout)
     return _extract_one(pdf, schema, str(schema_path), doc_id, args, client)
@@ -115,6 +149,7 @@ def cmd_batch(args) -> int:
         sys.exit(f"Not prepared: {unknown}. Run `credit-doc-lab prepare`.")
     if args.limit:
         ids = ids[: args.limit]
+    _progress("batch", f"Loading schema and preparing Gemini client for {len(ids)} document(s).")
     schema = load_schema(layout.schema)
     client = make_client(args.timeout)
     failures = sum(_extract_one(layout.pdf(d), schema, str(layout.schema), d, args, client) for d in ids)
@@ -144,16 +179,27 @@ def cmd_evaluate(args) -> int:
             sys.exit("No runs found.")
         for rd in run_dirs:
             results.append(evaluate_run(rd, layout, scorer=args.scorer, judge_model=args.judge_model))
-    for r in results:
+    for index, r in enumerate(results):
+        if index:
+            print()
         c = r.summary.outcome_counts
-        print(f"[{r.scorer}] {r.doc_id}: pass_rate={r.summary.pass_rate:.1%} score={r.summary.field_score:.3f} "
-              + " ".join(f"{k}={v}" for k, v in c.items()))
-        if args.details:
-            for f in r.fields:
-                if f.outcome != "correct":
-                    print(f"    {f.path} [{f.outcome}] gold={f.gold!r:.80} predicted={f.predicted!r:.80}")
+        print(f"Document: {r.doc_id}")
+        if r.run_id:
+            print(f"Run:      {r.run_id}")
+        print(f"Scorer:   {r.scorer}")
+        print(f"Results:  {r.summary.pass_rate:.1%} passed | mean field score: {r.summary.field_score:.3f}")
+        print("Counts:   " + " | ".join(f"{k}: {v}" for k, v in c.items()))
+        print("\nFields:")
+        for f in r.fields:
+            print(f"  {f.path} [{f.outcome}]")
+            if args.details:
+                for label, value in (("Reference", f.gold), ("Predicted", f.predicted)):
+                    text = json.dumps(value, ensure_ascii=False)
+                    print(f"    {label}:")
+                    print(textwrap.fill(text, width=88, initial_indent="      ",
+                                        subsequent_indent="      ", replace_whitespace=False))
     if args.scorer == "baseline":
-        print("Note: baseline scorer is an offline approximation, not the official ExtractBench scorer.")
+        print("\nNote: baseline scorer is an offline approximation, not the official ExtractBench scorer.")
     return 0
 
 
@@ -186,7 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true")
     p.set_defaults(func=cmd_split)
 
-    p = sub.add_parser("extract", help="extract one document with Gemini (needs GEMINI_API_KEY)")
+    p = sub.add_parser("extract", help="extract one document with Gemini (needs an API key)")
     _add_common(p)
     _add_run_options(p)
     g = p.add_mutually_exclusive_group(required=True)
@@ -213,7 +259,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--doc", help="document id for --prediction")
     p.add_argument("--scorer", choices=["baseline", "official"], default="baseline")
     p.add_argument("--judge-model", default=None, help="LiteLLM judge model for the official scorer")
-    p.add_argument("--details", action="store_true", help="list non-correct fields")
+    p.add_argument("--details", action="store_true", help="show reference and predicted values for all fields")
     p.set_defaults(func=cmd_evaluate)
 
     p = sub.add_parser("report", help="Markdown summary of saved runs")
@@ -231,9 +277,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except Exception as exc:  # noqa: BLE001 - friendly CLI errors
-        from .extract import DocumentTooLargeError, MissingApiKeyError
-
-        if isinstance(exc, (MissingApiKeyError, DocumentTooLargeError, FileNotFoundError, ValueError, RuntimeError)):
+        if isinstance(exc, (FileNotFoundError, ValueError, RuntimeError)):
             print(f"error: {exc}", file=sys.stderr)
             return 2
         raise
