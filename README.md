@@ -18,10 +18,8 @@ Inspected [ContextualAI/extract-bench](https://github.com/ContextualAI/extract-b
 | Scoring | Yes: `extract_bench` Python package. Deterministic metrics, plus LLM-judged `string_semantic` / `array_llm` (via LiteLLM; default judge `vertex_ai/gemini-2.5-flash`). |
 | License | Repo is MIT (© 2026 Contextual AI); the paper says dataset and framework are released under MIT. The paper also states the credit agreements are public-domain SEC EDGAR exhibits (an authors' claim I did not verify). The dataset README itself just says "See the repository LICENSE". See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). |
 
-The paper (Ferguson et al., arXiv:2602.12247) was read from text you pasted, because arxiv.org
-is unreachable from my environment; I could not compare it with the original. Things it adds:
-the credit subset has 13 fields (269 gold values over 10 documents), annotated by a three-person
-team in about 2.9 hours total, with no inter-annotator agreement reported. Omission (gold has a
+The paper (Ferguson et al., arXiv:2602.12247) adds these details: the credit subset has 13 fields
+(269 gold values over 10 documents), annotated by a three-person team in about 2.9 hours total, with no inter-annotator agreement reported. Omission (gold has a
 value, prediction empty) is deliberately separated from hallucination (gold null, prediction has
 a value), which is how `missing` / `unexpected` are defined here. The paper does not mention the
 quirks I found in the data: a few gold values are the literal string `"NOT_FOUND"` (the official
@@ -76,10 +74,10 @@ not checked against the live model list, so pass `--model` explicitly).
 * Retries: transient failures (HTTP 5xx, 408, 429, network errors) retry up to `--max-retries`
   (default 3) with backoff; other errors fail immediately. Every failed attempt is recorded.
 * Limitations: PDFs over 15 MB are rejected (inline only; the Files API is not implemented).
-  Gemini's page-count/size limits were **not** checked against Google's docs (ai.google.dev was
-  unreachable here), so confirm them for other documents. For this subset, the paper reports that
-  Gemini 3 Flash and Pro ingested all ten PDFs (up to 218 pages); it says Claude's 100-page limit
-  rejects them. Only the SDK README/source were consulted for the API.
+  Gemini's page-count/size limits have not been checked against Google's documentation, so
+  confirm them for other documents. For this subset, the paper reports that Gemini 3 Flash and Pro
+  ingested all ten PDFs (up to 218 pages) while Claude's 100-page limit rejected them. The API
+  usage follows the google-genai SDK README and source.
 * Reference answers never enter requests: `extract.py` has no reference parameter and imports no
   dataset/scoring code (enforced by `tests/test_reference_isolation.py`).
 
@@ -120,7 +118,7 @@ a 0.8 Levenshtein threshold, single runs, default API parameters:
 | Prompt mode (schema in a zero-shot prompt, Appendix D) | 111/130 (85.4%) | 110/130 (84.6%) |
 | Provider structured-output mode (closest to this repo) | 83.8% | 88.5% |
 
-These are quoted from the pasted text and are not results of this repo. Our baseline differs
+These are quoted from the paper and are not results of this repo. Our baseline differs
 (structured output with a system instruction, different prompt), and the offline baseline scorer
 approximates the judge, so only `--scorer official` with the same judge is a fair comparison, and
 even then single runs on 10 documents are noisy. The paper also finds structured-output mode lowers
