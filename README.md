@@ -12,17 +12,22 @@ Inspected [ContextualAI/extract-bench](https://github.com/ContextualAI/extract-b
 
 | Need | Finding |
 |---|---|
-| Source PDFs | Yes: 10 credit agreements in `dataset/finance/credit_agreement/pdf+gold/` (~1–2 MB each). 4 more PDFs in `_extra/` have no reference answers and are skipped. |
+| Source PDFs | Yes: 10 credit agreements in `dataset/finance/credit_agreement/pdf+gold/` (~1–2 MB each; 97–218 pages, mean 137, 1,368 total, which I counted locally and which matches the paper). 4 more PDFs in `_extra/` have no reference answers and are skipped. |
 | Schema | Yes: `credit_agreement-schema.json` (JSON Schema + per-field `evaluation_config`; 13 scored fields). |
 | Reference answers | Yes: `*.gold.json`, described as human-validated. |
 | Scoring | Yes: `extract_bench` Python package. Deterministic metrics, plus LLM-judged `string_semantic` / `array_llm` (via LiteLLM; default judge `vertex_ai/gemini-2.5-flash`). |
-| License | Repo is MIT (© 2026 Contextual AI). The dataset README just says "See the repository LICENSE". PDFs come from public filings, so MIT may not cover rights in the underlying documents. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). |
+| License | Repo is MIT (© 2026 Contextual AI); the paper says dataset and framework are released under MIT. The paper also states the credit agreements are public-domain SEC EDGAR exhibits (an authors' claim I did not verify). The dataset README itself just says "See the repository LICENSE". See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). |
 
-Not verified: the paper (arXiv:2602.12247) could not be fetched from this environment (no route to
-arxiv.org), so only the repo README/code were read. Quirks seen in the data: a few gold values are
-the literal string `"NOT_FOUND"` (the official scorer treats it as ordinary text, and the schema
-never asks for it, so a model returning `null` is marked wrong on those fields); long text fields
-(`borrowing_request`, `use_of_proceeds`) hold verbatim, often messy contract text.
+The paper (Ferguson et al., arXiv:2602.12247) was read from text you pasted, because arxiv.org
+is unreachable from my environment; I could not compare it with the original. Things it adds:
+the credit subset has 13 fields (269 gold values over 10 documents), annotated by a three-person
+team in about 2.9 hours total, with no inter-annotator agreement reported. Omission (gold has a
+value, prediction empty) is deliberately separated from hallucination (gold null, prediction has
+a value), which is how `missing` / `unexpected` are defined here. The paper does not mention the
+quirks I found in the data: a few gold values are the literal string `"NOT_FOUND"` (the official
+scorer treats it as ordinary text, and the schema never asks for it, so a model returning `null`
+is marked wrong on those fields), and long text fields (`borrowing_request`, `use_of_proceeds`)
+hold verbatim, often messy contract text.
 
 `prepare` downloads these via the GitHub trees API + `raw.githubusercontent.com` at the pinned
 commit and verifies each file's git blob SHA-1 against the tree listing. Data goes to
@@ -71,8 +76,10 @@ not checked against the live model list, so pass `--model` explicitly).
 * Retries: transient failures (HTTP 5xx, 408, 429, network errors) retry up to `--max-retries`
   (default 3) with backoff; other errors fail immediately. Every failed attempt is recorded.
 * Limitations: PDFs over 15 MB are rejected (inline only; the Files API is not implemented).
-  Page-count/size limits were **not** checked against Google's docs (ai.google.dev was unreachable
-  here), so confirm them for large agreements. Only the SDK README/source were consulted.
+  Gemini's page-count/size limits were **not** checked against Google's docs (ai.google.dev was
+  unreachable here), so confirm them for other documents. For this subset, the paper reports that
+  Gemini 3 Flash and Pro ingested all ten PDFs (up to 218 pages); it says Claude's 100-page limit
+  rejects them. Only the SDK README/source were consulted for the API.
 * Reference answers never enter requests: `extract.py` has no reference parameter and imports no
   dataset/scoring code (enforced by `tests/test_reference_isolation.py`).
 
@@ -102,6 +109,24 @@ prediction null/absent), **unexpected** (prediction has a value, gold is null/ab
   so the adapter's conversion code and LiteLLM's use of `GEMINI_API_KEY` for `gemini/` models are
   untested end to end.
 
+## Reference points from the paper (not comparable with our baseline scorer)
+
+On the credit subset the paper reports field pass rates (fields passed over 130 = 10 documents x
+13 fields; invalid output counts as 0), using Gemini 2.5 Flash as judge with pass threshold 0.7 and
+a 0.8 Levenshtein threshold, single runs, default API parameters:
+
+| Mode | Gemini 3 Flash | Gemini 3 Pro |
+|---|---|---|
+| Prompt mode (schema in a zero-shot prompt, Appendix D) | 111/130 (85.4%) | 110/130 (84.6%) |
+| Provider structured-output mode (closest to this repo) | 83.8% | 88.5% |
+
+These are quoted from the pasted text and are not results of this repo. Our baseline differs
+(structured output with a system instruction, different prompt), and the offline baseline scorer
+approximates the judge, so only `--scorer official` with the same judge is a fair comparison, and
+even then single runs on 10 documents are noisy. The paper also finds structured-output mode lowers
+validity on large schemas (not on this small one) and reports that models are unreliable on its
+larger schemas; neither was tested here.
+
 ## Reserving documents for evaluation
 
 `splits/credit_agreement.json` is a deterministic 6 dev / 4 holdout split (seed 0), committed so the
@@ -112,9 +137,9 @@ holdout results turns it into a second dev set.
 
 ## Limitations of a small public benchmark
 
-Ten documents (13 scored fields each) give very noisy estimates; differences of a few fields are not
+Ten documents (13 scored fields each; 130 field decisions per full pass) give very noisy estimates; differences of a few fields are not
 meaningful, and no confidence intervals are computed. The documents are public and may appear in
-model training data. Gold labels have quirks (above). There is one schema and one document type.
+model training data. Gold labels have quirks (above), were made by three annotators, and have no reported agreement statistic. There is one schema and one document type.
 A cited quote or any other evidence being present would not prove a value is semantically correct;
 this milestone has no citations anyway. Results here do not establish production reliability.
 

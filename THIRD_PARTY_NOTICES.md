@@ -25,6 +25,7 @@ copyright and permission notice to be included in copies or substantial portions
 the full text is saved as `data/credit_agreement/LICENSE.extract-bench` by `prepare`
 and at <https://github.com/ContextualAI/extract-bench/blob/ca817638852a23bb17ca9aaeb82ccdd29e9af9ca/LICENSE>.
 
-The dataset README only says "See the repository LICENSE for terms." The PDFs are credit
-agreements from public company filings; the MIT terms may not cover rights in those underlying
-documents. Do not redistribute the downloaded data without checking.
+The dataset README only says "See the repository LICENSE for terms." The paper (Appendix A) says
+the credit agreements are public-domain exhibits from SEC EDGAR filings and that the dataset and
+framework are released under the MIT license. That is the authors' statement; it has not been
+independently verified here. Check before redistributing the downloaded data.
