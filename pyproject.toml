@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "credit-doc-lab"
+version = "0.1.0"
+description = "Baseline Gemini extraction of loan terms from credit agreements, with reproducible evaluation"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=3.0",
+    "pydantic>=2.0",
+    "jsonschema>=4.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+# Official ExtractBench scorer (pulls in litellm); pinned to the dataset commit.
+official = [
+    "extract-bench @ git+https://github.com/ContextualAI/extract-bench@ca817638852a23bb17ca9aaeb82ccdd29e9af9ca",
+]
+
+[project.scripts]
+credit-doc-lab = "credit_doc_lab.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/credit_doc_lab"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
